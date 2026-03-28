@@ -4,13 +4,13 @@ import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { useToast } from "@/hooks/use-toast";
 import { Bot, Send, RefreshCw, User } from "lucide-react";
 
 type Message = {
   id: string;
   role: "user" | "assistant";
   content: string;
-  created_at: string;
 };
 
 type ProjectInfo = {
@@ -22,8 +22,11 @@ type ProjectInfo = {
   is_active: boolean;
 };
 
+const CHAT_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/chatbot-respond`;
+
 const ChatBot = () => {
   const { projectId } = useParams<{ projectId: string }>();
+  const { toast } = useToast();
   const [project, setProject] = useState<ProjectInfo | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
@@ -57,30 +60,132 @@ const ChatBot = () => {
     setInput("");
     setSending(true);
 
-    // Add user message
-    const { data: inserted } = await supabase
-      .from("chat_messages")
-      .insert({ project_id: projectId, session_id: sessionId, role: "user", content: userMsg })
-      .select()
-      .single();
+    const userMessage: Message = { id: crypto.randomUUID(), role: "user", content: userMsg };
+    setMessages((prev) => [...prev, userMessage]);
 
-    if (inserted) {
-      setMessages((prev) => [...prev, inserted as Message]);
-    }
+    // Save user message to DB
+    supabase.from("chat_messages").insert({
+      project_id: projectId,
+      session_id: sessionId,
+      role: "user",
+      content: userMsg,
+    }).then(() => {});
 
-    // Simulate AI response (in production, call an edge function)
-    setTimeout(async () => {
-      const botReply = `ご質問ありがとうございます。「${userMsg}」について確認いたします。現在、AIバックエンドとの統合が進行中です。完全な回答機能は近日中にご利用いただけます。`;
-      const { data: botInserted } = await supabase
-        .from("chat_messages")
-        .insert({ project_id: projectId, session_id: sessionId, role: "assistant", content: botReply })
-        .select()
-        .single();
-      if (botInserted) {
-        setMessages((prev) => [...prev, botInserted as Message]);
+    // Build conversation history for AI
+    const chatHistory = [...messages, userMessage].map((m) => ({
+      role: m.role,
+      content: m.content,
+    }));
+
+    try {
+      const resp = await fetch(CHAT_URL, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
+        },
+        body: JSON.stringify({ messages: chatHistory, projectId }),
+      });
+
+      if (!resp.ok) {
+        const errData = await resp.json().catch(() => ({ error: "AI応答エラー" }));
+        toast({ title: "エラー", description: errData.error || `エラー (${resp.status})`, variant: "destructive" });
+        setSending(false);
+        return;
       }
+
+      if (!resp.body) {
+        toast({ title: "エラー", description: "ストリーミングがサポートされていません", variant: "destructive" });
+        setSending(false);
+        return;
+      }
+
+      // Stream response
+      const reader = resp.body.getReader();
+      const decoder = new TextDecoder();
+      let textBuffer = "";
+      let assistantContent = "";
+      const assistantId = crypto.randomUUID();
+
+      // Add empty assistant message
+      setMessages((prev) => [...prev, { id: assistantId, role: "assistant", content: "" }]);
+
+      let streamDone = false;
+      while (!streamDone) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        textBuffer += decoder.decode(value, { stream: true });
+
+        let newlineIndex: number;
+        while ((newlineIndex = textBuffer.indexOf("\n")) !== -1) {
+          let line = textBuffer.slice(0, newlineIndex);
+          textBuffer = textBuffer.slice(newlineIndex + 1);
+
+          if (line.endsWith("\r")) line = line.slice(0, -1);
+          if (line.startsWith(":") || line.trim() === "") continue;
+          if (!line.startsWith("data: ")) continue;
+
+          const jsonStr = line.slice(6).trim();
+          if (jsonStr === "[DONE]") {
+            streamDone = true;
+            break;
+          }
+
+          try {
+            const parsed = JSON.parse(jsonStr);
+            const content = parsed.choices?.[0]?.delta?.content as string | undefined;
+            if (content) {
+              assistantContent += content;
+              const currentContent = assistantContent;
+              setMessages((prev) =>
+                prev.map((m) => (m.id === assistantId ? { ...m, content: currentContent } : m))
+              );
+            }
+          } catch {
+            textBuffer = line + "\n" + textBuffer;
+            break;
+          }
+        }
+      }
+
+      // Final flush
+      if (textBuffer.trim()) {
+        for (let raw of textBuffer.split("\n")) {
+          if (!raw) continue;
+          if (raw.endsWith("\r")) raw = raw.slice(0, -1);
+          if (raw.startsWith(":") || raw.trim() === "") continue;
+          if (!raw.startsWith("data: ")) continue;
+          const jsonStr = raw.slice(6).trim();
+          if (jsonStr === "[DONE]") continue;
+          try {
+            const parsed = JSON.parse(jsonStr);
+            const content = parsed.choices?.[0]?.delta?.content as string | undefined;
+            if (content) {
+              assistantContent += content;
+              const currentContent = assistantContent;
+              setMessages((prev) =>
+                prev.map((m) => (m.id === assistantId ? { ...m, content: currentContent } : m))
+              );
+            }
+          } catch { /* ignore */ }
+        }
+      }
+
+      // Save assistant message to DB
+      if (assistantContent) {
+        supabase.from("chat_messages").insert({
+          project_id: projectId,
+          session_id: sessionId,
+          role: "assistant",
+          content: assistantContent,
+        }).then(() => {});
+      }
+    } catch (e) {
+      console.error("Stream error:", e);
+      toast({ title: "エラー", description: "AI応答の取得に失敗しました", variant: "destructive" });
+    } finally {
       setSending(false);
-    }, 1000);
+    }
   };
 
   if (loading) {
@@ -154,7 +259,7 @@ const ChatBot = () => {
             </div>
           ))}
 
-          {sending && (
+          {sending && messages[messages.length - 1]?.role !== "assistant" && (
             <div className="flex gap-3">
               <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full" style={{ backgroundColor: themeColor }}>
                 <Bot className="h-4 w-4 text-white" />
