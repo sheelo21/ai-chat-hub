@@ -7,6 +7,8 @@ type AuthContextType = {
   user: User | null;
   loading: boolean;
   signOut: () => Promise<void>;
+  isAdmin: boolean;
+  userRole: 'admin' | 'user' | null;
 };
 
 const AuthContext = createContext<AuthContextType>({
@@ -14,6 +16,8 @@ const AuthContext = createContext<AuthContextType>({
   user: null,
   loading: true,
   signOut: async () => {},
+  isAdmin: false,
+  userRole: null,
 });
 
 export const useAuth = () => useContext(AuthContext);
@@ -21,17 +25,47 @@ export const useAuth = () => useContext(AuthContext);
 export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
+  const [userRole, setUserRole] = useState<'admin' | 'user' | null>(null);
+
+  const isAdmin = userRole === 'admin';
 
   useEffect(() => {
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      (_event, session) => {
+      async (_event, session) => {
         setSession(session);
+        
+        if (session?.user) {
+          // ユーザーロールを取得
+          const { data: profile } = await supabase
+            .from('user_profiles')
+            .select('role')
+            .eq('id', session.user.id)
+            .single();
+          
+          setUserRole(profile?.role || 'user');
+        } else {
+          setUserRole(null);
+        }
+        
         setLoading(false);
       }
     );
 
-    supabase.auth.getSession().then(({ data: { session } }) => {
+    supabase.auth.getSession().then(async ({ data: { session } }) => {
       setSession(session);
+      
+      if (session?.user) {
+        const { data: profile } = await supabase
+          .from('user_profiles')
+          .select('role')
+          .eq('id', session.user.id)
+          .single();
+        
+        setUserRole(profile?.role || 'user');
+      } else {
+        setUserRole(null);
+      }
+      
       setLoading(false);
     });
 
@@ -43,7 +77,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   };
 
   return (
-    <AuthContext.Provider value={{ session, user: session?.user ?? null, loading, signOut }}>
+    <AuthContext.Provider value={{ session, user: session?.user ?? null, loading, signOut, isAdmin, userRole }}>
       {children}
     </AuthContext.Provider>
   );

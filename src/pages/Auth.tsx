@@ -51,8 +51,8 @@ const Auth = () => {
           <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-xl bg-primary">
             <Bot className="h-6 w-6 text-primary-foreground" />
           </div>
-          <CardTitle className="text-2xl font-bold">AI Chatbot Manager</CardTitle>
-          <CardDescription>チャットボット管理システムにアクセス</CardDescription>
+          <CardTitle className="text-2xl font-bold">AI Chat Hub</CardTitle>
+          <CardDescription>社内向けチャットボット管理システム</CardDescription>
         </CardHeader>
         <CardContent>
           <Tabs defaultValue="login">

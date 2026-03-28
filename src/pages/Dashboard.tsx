@@ -28,7 +28,7 @@ type Project = {
 };
 
 const Dashboard = () => {
-  const { user, signOut, loading: authLoading } = useAuth();
+  const { user, signOut, loading: authLoading, isAdmin } = useAuth();
   const navigate = useNavigate();
   const { toast } = useToast();
   const [projects, setProjects] = useState<Project[]>([]);
@@ -197,7 +197,7 @@ const Dashboard = () => {
             <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary">
               <Bot className="h-5 w-5 text-primary-foreground" />
             </div>
-            <h1 className="text-lg font-semibold">AI Chatbot Manager</h1>
+            <h1 className="text-lg font-semibold">AI Chat Hub</h1>
           </div>
           <Button variant="ghost" size="sm" onClick={signOut}>
             <LogOut className="mr-2 h-4 w-4" />
@@ -213,30 +213,33 @@ const Dashboard = () => {
             <p className="text-muted-foreground">チャットボットプロジェクトを管理</p>
           </div>
           <div className="flex flex-col gap-2 sm:flex-row">
-            <Button variant="outline" onClick={() => navigate("/dashboard/templates")} className="w-full sm:w-auto">
-              <Layout className="mr-2 h-4 w-4" />
-              テンプレート
-            </Button>
-            <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-              <DialogTrigger asChild>
-                <Button className="w-full sm:w-auto">
-                  <Plus className="mr-2 h-4 w-4" />
-                  新規作成
-                </Button>
-              </DialogTrigger>
-              <DialogContent>
-                <DialogHeader>
-                  <DialogTitle>新しいプロジェクト</DialogTitle>
-                </DialogHeader>
-                <form onSubmit={handleCreate} className="space-y-4">
-                  <div className="space-y-2">
-                    <Label>プロジェクト名</Label>
-                    <Input value={newName} onChange={(e) => setNewName(e.target.value)} required placeholder="例: ○○株式会社サポートボット" />
-                  </div>
-                  <div className="space-y-2">
-                    <Label>説明（任意）</Label>
-                    <Textarea value={newDesc} onChange={(e) => setNewDesc(e.target.value)} placeholder="プロジェクトの概要" />
-                  </div>
+            {isAdmin && (
+              <Button variant="outline" onClick={() => navigate("/dashboard/templates")} className="w-full sm:w-auto">
+                <Layout className="mr-2 h-4 w-4" />
+                テンプレート
+              </Button>
+            )}
+            {isAdmin && (
+              <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+                <DialogTrigger asChild>
+                  <Button className="w-full sm:w-auto">
+                    <Plus className="mr-2 h-4 w-4" />
+                    新規作成
+                  </Button>
+                </DialogTrigger>
+                <DialogContent>
+                  <DialogHeader>
+                    <DialogTitle>新しいプロジェクト</DialogTitle>
+                  </DialogHeader>
+                  <form onSubmit={handleCreate} className="space-y-4">
+                    <div className="space-y-2">
+                      <Label>プロジェクト名</Label>
+                      <Input value={newName} onChange={(e) => setNewName(e.target.value)} required placeholder="例: ○○株式会社サポートボット" />
+                    </div>
+                    <div className="space-y-2">
+                      <Label>説明（任意）</Label>
+                      <Textarea value={newDesc} onChange={(e) => setNewDesc(e.target.value)} placeholder="プロジェクトの概要" />
+                    </div>
                   <Button type="submit" className="w-full" disabled={creating}>
                     作成
                   </Button>
@@ -302,15 +305,15 @@ const Dashboard = () => {
               <Card 
                 key={project.id} 
                 className="group cursor-pointer transition-all hover:shadow-md"
-                draggable
-                onDragStart={() => handleDragStart(project.id)}
+                draggable={isAdmin}
+                onDragStart={() => isAdmin && handleDragStart(project.id)}
                 onDragOver={handleDragOver}
-                onDrop={(e) => handleDrop(e, project.id)}
+                onDrop={(e) => isAdmin && handleDrop(e, project.id)}
               >
                 <CardHeader className="pb-3">
                   <div className="flex items-start justify-between">
                     <div className="flex items-center gap-2">
-                      <GripVertical className="h-4 w-4 text-muted-foreground cursor-move" />
+                      {isAdmin && <GripVertical className="h-4 w-4 text-muted-foreground cursor-move" />}
                       <CardTitle className="text-base">{project.name}</CardTitle>
                     </div>
                     <div className="flex items-center gap-2">
@@ -341,30 +344,34 @@ const Dashboard = () => {
                       <Settings className="mr-2 h-3 w-3" />
                       設定
                     </Button>
-                    <Button 
-                      variant="outline" 
-                      size="sm"
+                    {isAdmin && (
+                      <Button 
+                        variant="outline" 
+                        size="sm"
                       className="flex-1"
                       onClick={(e) => {
                         e.stopPropagation();
-                        handleCloneProject(project);
+                        handleClone(project);
                       }}
                     >
                       <Copy className="mr-2 h-3 w-3" />
                       コピー
                     </Button>
-                    <Button 
-                      variant="outline" 
-                      size="sm"
-                      className="flex-1 text-red-600 hover:text-red-700 hover:bg-red-50"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleDeleteProject(project.id);
-                      }}
-                    >
-                      <Trash2 className="mr-2 h-3 w-3" />
-                      削除
-                    </Button>
+                    )}
+                    {isAdmin && (
+                      <Button 
+                        variant="outline" 
+                        size="sm"
+                        className="flex-1 text-red-600 hover:text-red-700 hover:bg-red-50"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleDeleteProject(project.id);
+                        }}
+                      >
+                        <Trash2 className="mr-2 h-3 w-3" />
+                        削除
+                      </Button>
+                    )}
                   </div>
                 </CardContent>
               </Card>
