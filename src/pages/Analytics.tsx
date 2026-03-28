@@ -6,7 +6,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
-import { ArrowLeft, MessageSquare, TrendingUp, Users, Calendar, Clock, BarChart3, PieChart } from "lucide-react";
+import { ArrowLeft, MessageSquare, TrendingUp, Users, Calendar, Clock, BarChart3, PieChart, ThumbsUp, ThumbsDown } from "lucide-react";
 import { format, subDays, startOfDay, endOfDay } from "date-fns";
 import { ja } from "date-fns/locale";
 
@@ -16,6 +16,7 @@ type ChatMessage = {
   role: string;
   session_id: string;
   created_at: string;
+  feedback?: "up" | "down" | null;
 };
 
 type DailyStats = {
@@ -48,8 +49,7 @@ const Analytics = () => {
   const [dailyStats, setDailyStats] = useState<DailyStats[]>([]);
   const [topKeywords, setTopKeywords] = useState<KeywordData[]>([]);
   const [recentSessions, setRecentSessions] = useState<SessionData[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [period, setPeriod] = useState<"7" | "30" | "90">("30");
+  const [period, setPeriod] = useState("7");
 
   useEffect(() => {
     if (!authLoading && !user) navigate("/auth");
@@ -59,46 +59,34 @@ const Analytics = () => {
     if (!projectId) return;
     const { data } = await supabase
       .from("projects")
-      .select("id, name")
+      .select("*")
       .eq("id", projectId)
       .single();
     setProject(data);
   };
 
-  const fetchAnalytics = async () => {
+  const fetchMessages = async () => {
     if (!projectId) return;
     
-    // メッセージデータ取得
-    const daysAgo = parseInt(period);
-    const startDate = subDays(new Date(), daysAgo);
+    const startDate = startOfDay(subDays(new Date(), parseInt(period)));
+    const endDate = endOfDay(new Date());
     
-    const { data: messagesData } = await supabase
+    const { data } = await supabase
       .from("chat_messages")
       .select("*")
       .eq("project_id", projectId)
       .gte("created_at", startDate.toISOString())
-      .order("created_at", { ascending: false });
+      .lte("created_at", endDate.toISOString())
+      .order("created_at", { ascending: true });
 
-    if (messagesData) {
-      setMessages(messagesData as ChatMessage[]);
-      
-      // 日次統計計算
-      const stats = calculateDailyStats(messagesData as ChatMessage[]);
-      setDailyStats(stats);
-      
-      // キーワード分析
-      const keywords = extractKeywords(messagesData as ChatMessage[]);
-      setTopKeywords(keywords);
-      
-      // セッション分析
-      const sessions = analyzeSessions(messagesData as ChatMessage[]);
-      setRecentSessions(sessions);
+    if (data) {
+      setMessages(data as ChatMessage[]);
+      calculateStats(data as ChatMessage[]);
     }
-    
-    setLoading(false);
   };
 
-  const calculateDailyStats = (msgs: ChatMessage[]): DailyStats[] => {
+  const calculateStats = (msgs: ChatMessage[]) => {
+    // 日次統計
     const stats: { [key: string]: DailyStats } = {};
     
     msgs.forEach(msg => {
@@ -107,14 +95,14 @@ const Analytics = () => {
         stats[date] = {
           date,
           totalMessages: 0,
-          uniqueSessions: new Set(),
+          uniqueSessions: new Set<string>(),
           userMessages: 0,
           assistantMessages: 0,
         } as any;
       }
       
       stats[date].totalMessages++;
-      stats[date].uniqueSessions.add(msg.session_id);
+      (stats[date].uniqueSessions as Set<string>).add(msg.session_id);
       
       if (msg.role === "user") {
         stats[date].userMessages++;
@@ -123,13 +111,12 @@ const Analytics = () => {
       }
     });
     
-    return Object.values(stats).map(stat => ({
+    setDailyStats(Object.values(stats).map(stat => ({
       ...stat,
       uniqueSessions: (stat.uniqueSessions as Set<string>).size,
-    })).sort((a, b) => a.date.localeCompare(b.date));
-  };
+    })).sort((a, b) => a.date.localeCompare(b.date)));
 
-  const extractKeywords = (msgs: ChatMessage[]): KeywordData[] => {
+    // キーワード分析
     const userMessages = msgs.filter(msg => msg.role === "user");
     const keywordCount: { [key: string]: number } = {};
     
@@ -145,41 +132,48 @@ const Analytics = () => {
       });
     });
     
-    return Object.entries(keywordCount)
-      .map(([keyword, count]) => ({ keyword, count }))
-      .sort((a, b) => b.count - a.count)
-      .slice(0, 20);
-  };
+    setTopKeywords(
+      Object.entries(keywordCount)
+        .sort(([, a], [, b]) => b - a)
+        .slice(0, 20)
+        .map(([keyword, count]) => ({ keyword, count }))
+    );
 
-  const analyzeSessions = (msgs: ChatMessage[]): SessionData[] => {
+    // セッション分析
     const sessionMap: { [key: string]: SessionData } = {};
-    
     msgs.forEach(msg => {
       if (!sessionMap[msg.session_id]) {
-        const firstMsg = msgs.find(m => m.session_id === msg.session_id && m.role === "user");
         sessionMap[msg.session_id] = {
           session_id: msg.session_id,
           message_count: 0,
-          first_message: firstMsg?.content || "",
+          first_message: msg.content,
           created_at: msg.created_at,
         };
       }
       sessionMap[msg.session_id].message_count++;
     });
     
-    return Object.values(sessionMap)
-      .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
-      .slice(0, 10);
+    setRecentSessions(
+      Object.values(sessionMap)
+        .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+        .slice(0, 10)
+    );
   };
 
   useEffect(() => {
-    if (user && projectId) {
+    if (user) {
       fetchProject();
-      fetchAnalytics();
+      fetchMessages();
     }
   }, [user, projectId, period]);
 
-  if (loading) {
+  useEffect(() => {
+    if (messages.length > 0) {
+      calculateStats(messages);
+    }
+  }, [messages]);
+
+  if (authLoading) {
     return (
       <div className="flex min-h-screen items-center justify-center">
         <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
@@ -190,6 +184,11 @@ const Analytics = () => {
   const totalMessages = messages.length;
   const totalSessions = new Set(messages.map(m => m.session_id)).size;
   const avgMessagesPerSession = totalSessions > 0 ? (totalMessages / totalSessions).toFixed(1) : "0";
+
+  const thumbsUp = messages.filter(msg => msg.role === "assistant" && msg.feedback === "up").length;
+  const thumbsDown = messages.filter(msg => msg.role === "assistant" && msg.feedback === "down").length;
+  const totalFeedback = thumbsUp + thumbsDown;
+  const positiveRate = totalFeedback > 0 ? Math.round((thumbsUp / totalFeedback) * 100) : 0;
 
   return (
     <div className="min-h-screen bg-background">
@@ -209,7 +208,7 @@ const Analytics = () => {
                 size="sm"
                 onClick={() => setPeriod(days)}
               >
-                {days}日間
+                {days}日
               </Button>
             ))}
           </div>
@@ -217,30 +216,27 @@ const Analytics = () => {
       </header>
 
       <main className="container py-8">
-        {/* 概要カード */}
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4 mb-8">
+        <div className="grid gap-6 mb-6 md:grid-cols-4">
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm font-medium">総メッセージ数</CardTitle>
               <MessageSquare className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold">{totalMessages.toLocaleString()}</div>
-              <p className="text-xs text-muted-foreground">過去{period}日間</p>
+              <div className="text-2xl font-bold">{totalMessages}</div>
             </CardContent>
           </Card>
-          
+
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">セッション数</CardTitle>
+              <CardTitle className="text-sm font-medium">総セッション数</CardTitle>
               <Users className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold">{totalSessions.toLocaleString()}</div>
-              <p className="text-xs text-muted-foreground">ユニークユーザー</p>
+              <div className="text-2xl font-bold">{totalSessions}</div>
             </CardContent>
           </Card>
-          
+
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm font-medium">平均メッセージ数</CardTitle>
@@ -248,38 +244,26 @@ const Analytics = () => {
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold">{avgMessagesPerSession}</div>
-              <p className="text-xs text-muted-foreground">セッションあたり</p>
             </CardContent>
           </Card>
-          
+
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">アクティブ率</CardTitle>
-              <BarChart3 className="h-4 w-4 text-muted-foreground" />
+              <CardTitle className="text-sm font-medium">満足度</CardTitle>
+              <PieChart className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold">
-                {totalSessions > 0 ? Math.round((totalMessages / totalSessions) * 10) : 0}%
-              </div>
-              <p className="text-xs text-muted-foreground">エンゲージメント</p>
+              <div className="text-2xl font-bold">{positiveRate}%</div>
             </CardContent>
           </Card>
         </div>
 
         <Tabs defaultValue="daily" className="space-y-6">
           <TabsList>
-            <TabsTrigger value="daily" className="gap-2">
-              <Calendar className="h-4 w-4" />
-              日次推移
-            </TabsTrigger>
-            <TabsTrigger value="keywords" className="gap-2">
-              <PieChart className="h-4 w-4" />
-              キーワード分析
-            </TabsTrigger>
-            <TabsTrigger value="sessions" className="gap-2">
-              <Clock className="h-4 w-4" />
-              最近のセッション
-            </TabsTrigger>
+            <TabsTrigger value="daily">📅 日次統計</TabsTrigger>
+            <TabsTrigger value="keywords">🔤 キーワード</TabsTrigger>
+            <TabsTrigger value="sessions">💬 セッション</TabsTrigger>
+            <TabsTrigger value="feedback">👍 フィードバック</TabsTrigger>
           </TabsList>
 
           <TabsContent value="daily">
@@ -290,13 +274,16 @@ const Analytics = () => {
               </CardHeader>
               <CardContent>
                 <div className="space-y-4">
-                  {dailyStats.map(stat => (
-                    <div key={stat.date} className="flex items-center justify-between p-3 border rounded-lg">
-                      <div>
-                        <p className="font-medium">{format(new Date(stat.date), "MM月dd日", { locale: ja })}</p>
-                        <p className="text-sm text-muted-foreground">
-                          {stat.userMessages} ユーザーメッセージ / {stat.assistantMessages} AI応答
-                        </p>
+                  {dailyStats.map((stat, index) => (
+                    <div key={stat.date} className="flex items-center justify-between p-3 border rounded">
+                      <div className="flex items-center gap-3">
+                        <Calendar className="h-4 w-4 text-muted-foreground" />
+                        <div>
+                          <p className="text-sm font-medium">{format(new Date(stat.date), "MM/dd")}</p>
+                          <p className="text-xs text-muted-foreground">
+                            {stat.userMessages + stat.assistantMessages}メッセージ
+                          </p>
+                        </div>
                       </div>
                       <div className="text-right">
                         <p className="font-bold">{stat.totalMessages}</p>
@@ -341,22 +328,83 @@ const Analytics = () => {
               </CardHeader>
               <CardContent>
                 <div className="space-y-4">
-                  {recentSessions.map(session => (
-                    <div key={session.session_id} className="p-4 border rounded-lg">
+                  {recentSessions.map(sessionData => (
+                    <div key={sessionData.session_id} className="p-4 border rounded-lg">
                       <div className="flex items-start justify-between mb-2">
                         <div>
-                          <p className="font-medium text-sm">セッションID: {session.session_id.slice(0, 8)}...</p>
+                          <p className="font-medium text-sm">セッションID: {sessionData.session_id.slice(0, 8)}...</p>
                           <p className="text-xs text-muted-foreground">
-                            {format(new Date(session.created_at), "yyyy/MM/dd HH:mm")}
+                            {format(new Date(sessionData.created_at), "yyyy/MM/dd HH:mm")}
                           </p>
                         </div>
-                        <Badge variant="outline">{session.message_count} メッセージ</Badge>
+                        <Badge variant="outline">{sessionData.message_count} メッセージ</Badge>
                       </div>
                       <p className="text-sm text-muted-foreground line-clamp-2">
-                        最初の質問: {session.first_message}
+                        最初の質問: {sessionData.first_message}
                       </p>
                     </div>
                   ))}
+                </div>
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          <TabsContent value="feedback">
+            <Card>
+              <CardHeader>
+                <CardTitle>フィードバック分析</CardTitle>
+                <CardDescription>ユーザーからの評価フィードバック</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="grid gap-4 md:grid-cols-2">
+                  <div className="space-y-4">
+                    <h4 className="font-medium">評価統計</h4>
+                    <div className="space-y-2">
+                      <div className="flex justify-between p-3 bg-green-50 rounded">
+                        <span className="text-green-700 flex items-center gap-2">
+                          <ThumbsUp className="h-4 w-4" />
+                          いいね
+                        </span>
+                        <span className="font-bold text-green-700">{thumbsUp}</span>
+                      </div>
+                      <div className="flex justify-between p-3 bg-red-50 rounded">
+                        <span className="text-red-700 flex items-center gap-2">
+                          <ThumbsDown className="h-4 w-4" />
+                          バッド
+                        </span>
+                        <span className="font-bold text-red-700">{thumbsDown}</span>
+                      </div>
+                      <div className="flex justify-between p-3 bg-blue-50 rounded">
+                        <span className="text-blue-700">満足度</span>
+                        <span className="font-bold text-blue-700">{positiveRate}%</span>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="space-y-4">
+                    <h4 className="font-medium">フィードバック付きメッセージ</h4>
+                    <div className="space-y-2 max-h-64 overflow-y-auto">
+                      {messages
+                        .filter(msg => msg.role === "assistant" && msg.feedback)
+                        .map(msg => (
+                          <div key={msg.id} className="p-3 border rounded">
+                            <div className="flex items-center gap-2 mb-2">
+                              <Badge variant={msg.feedback === "up" ? "default" : "destructive"}>
+                                {msg.feedback === "up" ? "👍" : "👎"}
+                              </Badge>
+                              <span className="text-xs text-muted-foreground">
+                                {format(new Date(msg.created_at), "MM/dd HH:mm")}
+                              </span>
+                            </div>
+                            <p className="text-sm line-clamp-3">{msg.content}</p>
+                          </div>
+                        ))}
+                      {messages.filter(msg => msg.role === "assistant" && msg.feedback).length === 0 && (
+                        <p className="text-sm text-muted-foreground text-center py-4">
+                          フィードバックがまだありません
+                        </p>
+                      )}
+                    </div>
+                  </div>
                 </div>
               </CardContent>
             </Card>

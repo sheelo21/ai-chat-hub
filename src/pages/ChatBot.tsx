@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { useToast } from "@/hooks/use-toast";
-import { Bot, Send, RefreshCw, User, Mic, MicOff, Volume2, ThumbsUp, ThumbsDown, Copy, RotateCcw } from "lucide-react";
+import { Bot, Send, RefreshCw, User, Mic, MicOff, Volume2, ThumbsUp, ThumbsDown, Copy, RotateCcw, X } from "lucide-react";
 
 type Message = {
   id: string;
@@ -18,10 +18,17 @@ type Message = {
 type ProjectInfo = {
   id: string;
   name: string;
+  description: string | null;
+  target_urls: string[];
+  ai_character: string;
   primary_color: string;
   welcome_message: string;
-  ai_character: string;
   is_active: boolean;
+  created_at: string;
+  updated_at: string;
+  user_id: string;
+  logo_url?: string;
+  response_length?: "short" | "medium" | "long";
 };
 
 const CHAT_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/chatbot-respond`;
@@ -244,7 +251,16 @@ const ChatBot = () => {
       msg.id === messageId ? { ...msg, feedback } : msg
     ));
     toast({ title: feedback === "up" ? "高く評価しました" : "低く評価しました" });
-  }, []);
+    
+    // フィードバックデータをDBに保存
+    if (projectId) {
+      supabase
+        .from("chat_messages")
+        .update({ feedback })
+        .eq("id", messageId)
+        .then(() => {});
+    }
+  }, [projectId]);
 
   const handleClearChat = useCallback(() => {
     setMessages([]);
@@ -327,7 +343,11 @@ const ChatBot = () => {
       <div className="flex items-center justify-between border-b px-4 py-3" style={{ borderBottomColor: themeColor + "30" }}>
         <div className="flex items-center gap-3">
           <div className="flex h-9 w-9 items-center justify-center rounded-full" style={{ backgroundColor: themeColor }}>
-            <Bot className="h-5 w-5 text-white" />
+            {project.logo_url ? (
+              <img src={project.logo_url} alt="ロゴ" className="h-5 w-5 object-contain" />
+            ) : (
+              <Bot className="h-5 w-5 text-white" />
+            )}
           </div>
           <div>
             <p className="text-sm font-semibold">{project.name}</p>
@@ -344,6 +364,14 @@ const ChatBot = () => {
             className="h-8 w-8"
           >
             <RotateCcw className="h-4 w-4" />
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={() => window.close()}
+            className="h-8 w-8"
+          >
+            <X className="h-4 w-4" />
           </Button>
         </div>
       </div>

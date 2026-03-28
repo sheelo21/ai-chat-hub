@@ -11,7 +11,7 @@ import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Switch } from "@/components/ui/switch";
 import { useToast } from "@/hooks/use-toast";
-import { ArrowLeft, Plus, Trash2, RefreshCw, Copy, Code, Bot, Globe, Sparkles, Clock, BarChart3, Download, Upload } from "lucide-react";
+import { ArrowLeft, Plus, Trash2, RefreshCw, Copy, Code, Bot, Globe, Sparkles, Clock, BarChart3, Download, Upload, X } from "lucide-react";
 import { format } from "date-fns";
 
 type Project = {
@@ -26,6 +26,8 @@ type Project = {
   created_at: string;
   updated_at: string;
   user_id: string;
+  logo_url?: string;
+  response_length?: "short" | "medium" | "long";
 };
 
 type CrawlLog = {
@@ -57,6 +59,8 @@ const ProjectSettings = () => {
   const [welcomeMessage, setWelcomeMessage] = useState("");
   const [isActive, setIsActive] = useState(true);
   const [targetUrls, setTargetUrls] = useState<string[]>([]);
+  const [responseLength, setResponseLength] = useState<"short" | "medium" | "long">("medium");
+  const [logoUrl, setLogoUrl] = useState<string>("");
 
   useEffect(() => {
     if (!authLoading && !user) navigate("/auth");
@@ -79,6 +83,8 @@ const ProjectSettings = () => {
       setWelcomeMessage(p.welcome_message);
       setIsActive(p.is_active);
       setTargetUrls(p.target_urls);
+      setResponseLength(p.response_length || "medium");
+      setLogoUrl(p.logo_url || "");
     }
     setLoading(false);
   };
@@ -102,20 +108,24 @@ const ProjectSettings = () => {
   }, [user, projectId]);
 
   const handleSave = async () => {
-    if (!projectId) return;
+    if (!project || !user) return;
     setSaving(true);
+    
     const { error } = await supabase
       .from("projects")
       .update({
         name,
-        description: description || null,
+        description,
+        target_urls: targetUrls,
         ai_character: aiCharacter,
         primary_color: primaryColor,
         welcome_message: welcomeMessage,
         is_active: isActive,
-        target_urls: targetUrls,
+        response_length: responseLength,
+        logo_url: logoUrl,
       })
       .eq("id", projectId);
+    
     setSaving(false);
     if (error) {
       toast({ title: "エラー", description: error.message, variant: "destructive" });
@@ -130,6 +140,38 @@ const ProjectSettings = () => {
       setTargetUrls([...targetUrls, newUrl.trim()]);
       setNewUrl("");
     }
+  };
+
+  const handleLogoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    
+    // ファイルサイズチェック (5MBまで)
+    if (file.size > 5 * 1024 * 1024) {
+      toast({ title: "エラー", description: "画像サイズは5MB以下にしてください", variant: "destructive" });
+      return;
+    }
+    
+    // Supabase Storageにアップロード
+    const fileExt = file.name.split('.').pop();
+    const fileName = `${projectId}/logo.${fileExt}`;
+    
+    const { data, error } = await supabase.storage
+      .from('project-logos')
+      .upload(fileName, file);
+    
+    if (error) {
+      toast({ title: "アップロードエラー", description: error.message, variant: "destructive" });
+      return;
+    }
+    
+    // 公開URLを取得
+    const { data: { publicUrl } } = supabase.storage
+      .from('project-logos')
+      .getPublicUrl(fileName);
+    
+    setLogoUrl(publicUrl);
+    toast({ title: "ロゴをアップロードしました" });
   };
 
   const removeUrl = (index: number) => {
@@ -340,6 +382,24 @@ const ProjectSettings = () => {
                   <Switch checked={isActive} onCheckedChange={setIsActive} />
                   <Label>チャットボットを有効化</Label>
                 </div>
+                <div className="space-y-2">
+                  <Label>ロゴ画像</Label>
+                  <div className="flex items-center gap-3">
+                    <Input
+                      type="file"
+                      accept="image/*"
+                      onChange={handleLogoUpload}
+                      className="flex-1"
+                    />
+                    {logoUrl && (
+                      <img
+                        src={logoUrl}
+                        alt="ロゴ"
+                        className="h-10 w-10 object-contain rounded"
+                      />
+                    )}
+                  </div>
+                </div>
               </CardContent>
             </Card>
           </TabsContent>
@@ -383,18 +443,31 @@ const ProjectSettings = () => {
           <TabsContent value="ai">
             <Card>
               <CardHeader>
-                <CardTitle>AIキャラクター設定</CardTitle>
-                <CardDescription>チャットボットの振る舞いやトーンを設定します</CardDescription>
+                <CardTitle>AI設定</CardTitle>
+                <CardDescription>AIキャラクターと応答の設定</CardDescription>
               </CardHeader>
-              <CardContent>
+              <CardContent className="space-y-4">
                 <div className="space-y-2">
-                  <Label>システムプロンプト</Label>
-                  <Textarea
-                    className="min-h-[200px] font-mono text-sm"
-                    value={aiCharacter}
-                    onChange={(e) => setAiCharacter(e.target.value)}
-                    placeholder="例: あなたは○○株式会社のカスタマーサポートです。丁寧で親しみやすい口調で回答してください。"
+                  <Label>AIキャラクター</Label>
+                  <Textarea 
+                    value={aiCharacter} 
+                    onChange={(e) => setAiCharacter(e.target.value)} 
+                    placeholder="例: あなたは親切で丁寧なAIアシスタントです。"
+                    rows={4}
                   />
+                </div>
+                <div className="space-y-2">
+                  <Label>回答の長さ</Label>
+                  <Select value={responseLength} onValueChange={(value: "short" | "medium" | "long") => setResponseLength(value)}>
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="short">短い (簡潔な回答)</SelectItem>
+                      <SelectItem value="medium">普通 (バランスの取れた回答)</SelectItem>
+                      <SelectItem value="long">長い (詳細な回答)</SelectItem>
+                    </SelectContent>
+                  </Select>
                 </div>
               </CardContent>
             </Card>
@@ -465,14 +538,26 @@ const ProjectSettings = () => {
                 </div>
                 <div className="rounded-lg border p-4">
                   <p className="text-sm font-medium mb-2">プレビュー</p>
-                  <a
-                    href={`/chat/${projectId}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-sm text-primary hover:underline"
-                  >
-                    チャットボットを別タブで開く →
-                  </a>
+                  <div className="flex items-center gap-2 mb-2">
+                    <a
+                      href={`/chat/${projectId}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-sm text-primary hover:underline"
+                    >
+                      チャットボットを別タブで開く →
+                    </a>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => window.open(`/chat/${projectId}`, 'chatbot-preview', 'width=400,height=600,scrollbars=yes,resizable=yes')}
+                    >
+                      ポップアップで開く
+                    </Button>
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    💡 ポップアップでは戻るボタンが表示されます
+                  </p>
                 </div>
               </CardContent>
             </Card>

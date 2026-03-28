@@ -5,7 +5,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Plus, Bot, LogOut, Settings, RefreshCw, Copy, Search, Filter, Layout } from "lucide-react";
+import { Plus, Bot, LogOut, Settings, RefreshCw, Copy, Search, Filter, Layout, Trash2, GripVertical, ArrowUpDown } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -42,6 +42,7 @@ const Dashboard = () => {
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState<"all" | "active" | "inactive">("all");
   const [sortBy, setSortBy] = useState<"name" | "created" | "updated">("updated");
+  const [draggedProject, setDraggedProject] = useState<string | null>(null);
 
   useEffect(() => {
     if (!authLoading && !user) navigate("/auth");
@@ -105,6 +106,59 @@ const Dashboard = () => {
     }
   };
 
+  // プロジェクト削除機能
+  const handleDeleteProject = async (projectId: string) => {
+    if (!confirm("本当に削除しますか？この操作は元に戻せません。")) return;
+    
+    const { error } = await supabase
+      .from("projects")
+      .delete()
+      .eq("id", projectId);
+    
+    if (error) {
+      toast({ title: "エラー", description: error.message, variant: "destructive" });
+    } else {
+      toast({ title: "プロジェクトを削除しました" });
+      fetchProjects();
+    }
+  };
+
+  // ドラッグ＆ドロップ機能
+  const handleDragStart = (projectId: string) => {
+    setDraggedProject(projectId);
+  };
+
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+  };
+
+  const handleDrop = async (e: React.DragEvent, targetProjectId: string) => {
+    e.preventDefault();
+    if (!draggedProject || draggedProject === targetProjectId) {
+      setDraggedProject(null);
+      return;
+    }
+
+    // プロジェクトの順序を入れ替える（簡易的な実装）
+    const draggedIndex = projects.findIndex(p => p.id === draggedProject);
+    const targetIndex = projects.findIndex(p => p.id === targetProjectId);
+    
+    if (draggedIndex === -1 || targetIndex === -1) {
+      setDraggedProject(null);
+      return;
+    }
+
+    const newProjects = [...projects];
+    const [draggedItem] = newProjects.splice(draggedIndex, 1);
+    newProjects.splice(targetIndex, 0, draggedItem);
+    
+    setProjects(newProjects);
+    setDraggedProject(null);
+    
+    // DBに順序を保存する（必要に応じてorderカラムを追加）
+    toast({ title: "プロジェクトの順序を変更しました" });
+  };
+
   // フィルター・ソート処理
   const filteredAndSortedProjects = projects
     .filter(project => {
@@ -153,19 +207,19 @@ const Dashboard = () => {
       </header>
 
       <main className="container py-8">
-        <div className="mb-8 flex items-center justify-between">
+        <div className="mb-8 flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
           <div>
             <h2 className="text-2xl font-bold">プロジェクト一覧</h2>
             <p className="text-muted-foreground">チャットボットプロジェクトを管理</p>
           </div>
-          <div className="flex gap-2">
-            <Button variant="outline" onClick={() => navigate("/dashboard/templates")}>
+          <div className="flex flex-col gap-2 sm:flex-row">
+            <Button variant="outline" onClick={() => navigate("/dashboard/templates")} className="w-full sm:w-auto">
               <Layout className="mr-2 h-4 w-4" />
               テンプレート
             </Button>
             <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
               <DialogTrigger asChild>
-                <Button>
+                <Button className="w-full sm:w-auto">
                   <Plus className="mr-2 h-4 w-4" />
                   新規作成
                 </Button>
@@ -203,7 +257,7 @@ const Dashboard = () => {
               className="pl-10"
             />
           </div>
-          <div className="flex gap-2">
+          <div className="flex flex-col gap-2 sm:flex-row">
             <Select value={statusFilter} onValueChange={(value: "all" | "active" | "inactive") => setStatusFilter(value)}>
               <SelectTrigger className="w-[140px]">
                 <Filter className="mr-2 h-4 w-4" />
@@ -217,6 +271,7 @@ const Dashboard = () => {
             </Select>
             <Select value={sortBy} onValueChange={(value: "name" | "created" | "updated") => setSortBy(value)}>
               <SelectTrigger className="w-[140px]">
+                <ArrowUpDown className="mr-2 h-4 w-4" />
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -242,15 +297,27 @@ const Dashboard = () => {
             </CardDescription>
           </Card>
         ) : (
-          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-            {filteredAndSortedProjects.map((project) => (
-              <Card key={project.id} className="group cursor-pointer transition-shadow hover:shadow-md">
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            {filteredAndSortedProjects.map((project, index) => (
+              <Card 
+                key={project.id} 
+                className="group cursor-pointer transition-all hover:shadow-md"
+                draggable
+                onDragStart={() => handleDragStart(project.id)}
+                onDragOver={handleDragOver}
+                onDrop={(e) => handleDrop(e, project.id)}
+              >
                 <CardHeader className="pb-3">
                   <div className="flex items-start justify-between">
-                    <CardTitle className="text-base">{project.name}</CardTitle>
-                    <Badge variant={project.is_active ? "default" : "secondary"}>
-                      {project.is_active ? "稼働中" : "停止"}
-                    </Badge>
+                    <div className="flex items-center gap-2">
+                      <GripVertical className="h-4 w-4 text-muted-foreground cursor-move" />
+                      <CardTitle className="text-base">{project.name}</CardTitle>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Badge variant={project.is_active ? "default" : "secondary"}>
+                        {project.is_active ? "稼働中" : "停止"}
+                      </Badge>
+                    </div>
                   </div>
                   {project.description && (
                     <CardDescription className="line-clamp-2">{project.description}</CardDescription>
@@ -261,7 +328,7 @@ const Dashboard = () => {
                     <span>URL: {project.target_urls.length}件</span>
                     <span>{format(new Date(project.updated_at), "yyyy/MM/dd")}</span>
                   </div>
-                  <div className="flex gap-2">
+                  <div className="flex flex-col gap-2 sm:flex-row">
                     <Button 
                       variant="outline" 
                       size="sm" 
@@ -277,12 +344,26 @@ const Dashboard = () => {
                     <Button 
                       variant="outline" 
                       size="sm"
+                      className="flex-1"
                       onClick={(e) => {
                         e.stopPropagation();
-                        handleClone(project);
+                        handleCloneProject(project);
                       }}
                     >
-                      <Copy className="h-3 w-3" />
+                      <Copy className="mr-2 h-3 w-3" />
+                      コピー
+                    </Button>
+                    <Button 
+                      variant="outline" 
+                      size="sm"
+                      className="flex-1 text-red-600 hover:text-red-700 hover:bg-red-50"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleDeleteProject(project.id);
+                      }}
+                    >
+                      <Trash2 className="mr-2 h-3 w-3" />
+                      削除
                     </Button>
                   </div>
                 </CardContent>
