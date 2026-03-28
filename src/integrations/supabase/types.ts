@@ -14,7 +14,121 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      chat_messages: {
+        Row: {
+          content: string
+          created_at: string
+          id: string
+          project_id: string
+          role: string
+          session_id: string
+        }
+        Insert: {
+          content: string
+          created_at?: string
+          id?: string
+          project_id: string
+          role: string
+          session_id: string
+        }
+        Update: {
+          content?: string
+          created_at?: string
+          id?: string
+          project_id?: string
+          role?: string
+          session_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "chat_messages_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      crawl_logs: {
+        Row: {
+          completed_at: string | null
+          error_message: string | null
+          id: string
+          pages_crawled: number | null
+          project_id: string
+          started_at: string
+          status: string
+        }
+        Insert: {
+          completed_at?: string | null
+          error_message?: string | null
+          id?: string
+          pages_crawled?: number | null
+          project_id: string
+          started_at?: string
+          status?: string
+        }
+        Update: {
+          completed_at?: string | null
+          error_message?: string | null
+          id?: string
+          pages_crawled?: number | null
+          project_id?: string
+          started_at?: string
+          status?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "crawl_logs_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      projects: {
+        Row: {
+          ai_character: string
+          created_at: string
+          description: string | null
+          id: string
+          is_active: boolean
+          name: string
+          primary_color: string
+          target_urls: string[]
+          updated_at: string
+          user_id: string
+          welcome_message: string
+        }
+        Insert: {
+          ai_character?: string
+          created_at?: string
+          description?: string | null
+          id?: string
+          is_active?: boolean
+          name: string
+          primary_color?: string
+          target_urls?: string[]
+          updated_at?: string
+          user_id: string
+          welcome_message?: string
+        }
+        Update: {
+          ai_character?: string
+          created_at?: string
+          description?: string | null
+          id?: string
+          is_active?: boolean
+          name?: string
+          primary_color?: string
+          target_urls?: string[]
+          updated_at?: string
+          user_id?: string
+          welcome_message?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
