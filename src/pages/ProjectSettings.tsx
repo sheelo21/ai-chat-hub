@@ -563,24 +563,26 @@ const ProjectSettings = () => {
             </Card>
           </TabsContent>
 
-          <TabsContent value="analytics">
-            <Card>
-              <CardHeader>
-                <CardTitle>チャット分析</CardTitle>
-                <CardDescription>チャットボットの利用状況とパフォーマンスを分析</CardDescription>
-              </CardHeader>
-              <CardContent>
-                <Button 
-                  onClick={() => navigate(`/dashboard/project/${projectId}/analytics`)}
-                  className="w-full"
-                >
-                  <BarChart3 className="mr-2 h-4 w-4" />
-                  詳細分析画面へ
-                </Button>
-              </CardContent>
-            </Card>
-          </TabsContent>
-        <TabsContent value="backup">
+          {isAdmin && (
+            <TabsContent value="analytics">
+              <Card>
+                <CardHeader>
+                  <CardTitle>チャット分析</CardTitle>
+                  <CardDescription>チャットボットの利用状況とパフォーマンスを分析</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <Button 
+                    onClick={() => navigate(`/dashboard/project/${projectId}/analytics`)}
+                    className="w-full"
+                  >
+                    <BarChart3 className="mr-2 h-4 w-4" />
+                    詳細分析画面へ
+                  </Button>
+                </CardContent>
+              </Card>
+            </TabsContent>
+          )}
+          <TabsContent value="backup">
             <Card>
               <CardHeader>
                 <CardTitle>バックアップ・エクスポート</CardTitle>

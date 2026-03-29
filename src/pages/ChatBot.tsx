@@ -56,7 +56,7 @@ const ChatBot = () => {
       if (!projectId) return;
       const { data } = await supabase
         .from("projects")
-        .select("id, name, primary_color, welcome_message, ai_character, is_active")
+        .select("id, name, primary_color, welcome_message, ai_character, is_active, logo_url")
         .eq("id", projectId)
         .eq("is_active", true)
         .single();
