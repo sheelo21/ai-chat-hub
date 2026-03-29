@@ -243,10 +243,9 @@ const Dashboard = () => {
                     <Button type="submit" className="w-full" disabled={creating}>
                       作成
                     </Button>
-                  </form>
-                </DialogContent>
-              </Dialog>
-            )}
+                </form>
+              </DialogContent>
+            </Dialog>
           </div>
         </div>
 
@@ -349,15 +348,15 @@ const Dashboard = () => {
                       <Button 
                         variant="outline" 
                         size="sm"
-                        className="flex-1"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleClone(project);
-                        }}
-                      >
-                        <Copy className="mr-2 h-3 w-3" />
-                        コピー
-                      </Button>
+                      className="flex-1"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleClone(project);
+                      }}
+                    >
+                      <Copy className="mr-2 h-3 w-3" />
+                      コピー
+                    </Button>
                     )}
                     {isAdmin && (
                       <Button 
